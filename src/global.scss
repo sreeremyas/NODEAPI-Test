@@ -18,6 +18,53 @@
 @import "@ionic/angular/css/typography.css";
 @import "@ionic/angular/css/display.css";
 
+/* Robot marker styles */
+.robot-marker {
+  .robot-container {
+    position: relative !important;
+  }
+  
+  .robot-icon {
+    transition: transform 0.2s ease-out !important;
+    
+    &:hover {
+      border-color: #0066cc !important;
+      box-shadow: 0 0 10px rgba(0, 102, 204, 0.5) !important;
+    }
+  }
+  
+  .rotation-handle {
+    transition: all 0.2s ease-out !important;
+    
+    &:hover {
+      background-color: #45a049 !important;
+      transform: scale(1.1) !important;
+    }
+    
+    &:active {
+      background-color: #3d8b40 !important;
+      transform: scale(0.95) !important;
+    }
+  }
+}
+
+/* Leaflet map enhancements */
+.leaflet-container {
+  cursor: default !important;
+  
+  .leaflet-marker-icon {
+    border: none !important;
+  }
+}
+
+/* Disable text selection during dragging */
+.leaflet-drag-target {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
+
 /* Optional CSS utils that can be commented out */
 @import "@ionic/angular/css/padding.css";
 @import "@ionic/angular/css/float-elements.css";
