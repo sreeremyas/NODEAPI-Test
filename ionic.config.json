@@ -1,0 +1,7 @@
+{
+  "name": "NODEAPI-Test",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular"
+}
