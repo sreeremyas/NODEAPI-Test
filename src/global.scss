@@ -51,10 +51,66 @@
 /* Leaflet map enhancements */
 .leaflet-container {
   cursor: default !important;
+  background-color: #f5f5f5 !important; /* Light gray background */
+  /* Prevent content jumping during zoom */
+  position: relative !important;
+  overflow: hidden !important;
   
   .leaflet-marker-icon {
     border: none !important;
   }
+  
+  /* Ensure proper zoom controls */
+  .leaflet-control-zoom {
+    position: absolute !important;
+    top: 10px !important;
+    left: 10px !important;
+    z-index: 1000 !important;
+  }
+  
+  /* Improve zoom button styling */
+  .leaflet-control-zoom a {
+    background-color: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid #ccc !important;
+    color: #333 !important;
+    font-weight: bold !important;
+    
+    &:hover {
+      background-color: #fff !important;
+      border-color: #999 !important;
+    }
+  }
+  
+  /* Prevent zoom animation glitches */
+  .leaflet-zoom-anim .leaflet-image-layer {
+    transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
+  }
+  
+  /* Ensure proper layer positioning during zoom */
+  .leaflet-layer {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+  }
+}
+
+/* Map container styling */
+#map {
+  width: 100% !important;
+  height: 100vh !important;
+  position: relative !important;
+  z-index: 1 !important;
+  overflow: hidden !important; /* Prevent scrollbars that can affect proportions */
+}
+
+/* Ensure image overlay scales properly and maintains aspect ratio */
+.leaflet-image-layer {
+  image-rendering: -webkit-optimize-contrast !important;
+  image-rendering: crisp-edges !important;
+  /* Prevent image stretching during zoom transitions */
+  object-fit: contain !important;
+  max-width: none !important;
+  max-height: none !important;
 }
 
 /* Disable text selection during dragging */
