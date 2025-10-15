@@ -480,10 +480,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Direct coordinate mapping without Y-axis flipping
       // Apply -50m offset to both X and Y coordinates
+      // Reverse the direction of the angle (make clockwise positive)
       return {
-        x: this.pixelsToMetersX(pose.x) ,
-        y: this.pixelsToMetersY(pose.y) ,
-        angle: pose.angle // This is in degrees from RotatableMarker (0°=East, 90°=North, 180°=West, 270°=South)
+        x: this.pixelsToMetersX(pose.x),
+        y: this.pixelsToMetersY(pose.y),
+        angle: (360 - pose.angle) % 360 // Clockwise positive, 0°=East, 90°=South, 180°=West, 270°=North
       };
     }
     return null;
