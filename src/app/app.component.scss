@@ -1,0 +1,22 @@
+#map {
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  z-index: 1;
+}
+
+.robot-marker {
+  transition: all 0.3s ease-out;
+}
+
+.robot-marker div {
+  transition: all 0.3s ease-out;
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+/* Ensure the robot marker maintains quality during transforms */
+.robot-marker img {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
