@@ -149,34 +149,35 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  // Coordinate conversion methods - Direct mapping with global offset compensation
-  // Global offset: Map coordinate system is moved -65 in X and -50 in Y
-  // X increases from left to right, Y increases from top to bottom (standard screen coordinates)
-  private readonly GLOBAL_OFFSET_X = -65; // Map X offset
-  private readonly GLOBAL_OFFSET_Y = -50; // Map Y offset
+  // Coordinate conversion methods - Direct mapping without Y-axis flip
+  // Map origin represents the real-world coordinates of the bottom-left corner of the PNG image
+  // X increases from left to right, Y increases downward (decreases when going up)
+  // Direct pixel-to-meter mapping for both X and Y coordinates
 
   private metersToPixelsX(meters: number): number {
-    // X: Convert real-world meters to pixels, accounting for map origin and global offset
+    // X: Convert real-world meters to pixels, origin is bottom-left
     const pixels = (meters - (this.mapOrigin?.x || 0)) / this.resolution;
-    return pixels + this.GLOBAL_OFFSET_X; // Apply global X offset
+    return pixels;
   }
 
   private metersToPixelsY(meters: number): number {
-    // Y: Convert real-world meters to pixels, accounting for map origin and global offset
-    const pixels = (meters - (this.mapOrigin?.y || 0)) / this.resolution;
-    return pixels + this.GLOBAL_OFFSET_Y; // Apply global Y offset
+    // Y: Convert real-world meters to pixels, with Y decreasing when going up
+    // No Y-axis flip - direct mapping where higher Y meters = higher Y pixels (down on screen)
+    const metersFromOrigin = meters - (this.mapOrigin?.y || 0);
+    const pixelsFromOrigin = metersFromOrigin / this.resolution;
+    return pixelsFromOrigin;
   }
 
   private pixelsToMetersX(pixels: number): number {
-    // X: Convert pixels back to meters, accounting for map origin and global offset
-    const adjustedPixels = pixels - this.GLOBAL_OFFSET_X; // Remove global X offset
-    return (this.mapOrigin?.x || 0) + (adjustedPixels * this.resolution);
+    // X: Convert pixels back to meters, origin is bottom-left
+    return (this.mapOrigin?.x || 0) + (pixels * this.resolution);
   }
 
   private pixelsToMetersY(pixels: number): number {
-    // Y: Convert pixels back to meters, accounting for map origin and global offset
-    const adjustedPixels = pixels - this.GLOBAL_OFFSET_Y; // Remove global Y offset
-    return (this.mapOrigin?.y || 0) + (adjustedPixels * this.resolution);
+    // Y: Convert pixels back to meters, with Y decreasing when going up
+    // Direct mapping - no Y-axis flip
+    const metersFromOrigin = pixels * this.resolution;
+    return (this.mapOrigin?.y || 0) + metersFromOrigin;
   }
 
   // Calculate appropriate robot scale based on physical size and map resolution
@@ -376,9 +377,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         initialZoom: initialZoom.toFixed(2),
         center: center
       });
-      
-      // Log coordinate system for debugging
-      this.logCoordinateSystem();
     };
     img.src = this.mapImageUrl!;
   }
@@ -390,9 +388,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         this.robotMarker.remove();
       }
 
-      // Place robot at center of map in meters, then convert to pixels
-      const centerXMeters = this.mapWidthMeters / 2;
-      const centerYMeters = this.mapHeightMeters / 2;
+      // Place robot at center of map in real-world coordinates
+      // Center is origin + half the map dimensions
+      const centerXMeters = (this.mapOrigin?.x || 0) + (this.mapWidthMeters / 2);
+      const centerYMeters = (this.mapOrigin?.y || 0) + (this.mapHeightMeters / 2);
       
       const centerXPixels = this.metersToPixelsX(centerXMeters);
       const centerYPixels = this.metersToPixelsY(centerYMeters);
@@ -479,7 +478,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       const pose = this.robotMarker.getPose();
 
       // Direct coordinate mapping without Y-axis flipping
-      // Apply -50m offset to both X and Y coordinates
       // Reverse the direction of the angle (make clockwise positive)
       return {
         x: this.pixelsToMetersX(pose.x),
@@ -543,179 +541,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  // Comprehensive robot debug method showing all coordinate transformations
-  public logRobotDebugInfo(): void {
-    console.log('=== ROBOT DEBUG INFORMATION ===');
-    
-    if (!this.robotMarker) {
-      console.log('❌ No robot marker available');
-      return;
-    }
-
-    // Get raw Leaflet position
-    const rawPose = this.robotMarker.getPose();
-    const rawPoseRadians = this.robotMarker.getPoseRadians();
-    
-    console.log('📍 RAW LEAFLET POSITIONS:');
-    console.log('   • Leaflet X (pixels): ' + rawPose.x.toFixed(2));
-    console.log('   • Leaflet Y (pixels): ' + rawPose.y.toFixed(2));
-    console.log('   • Angle (degrees): ' + rawPose.angle.toFixed(2));
-    console.log('   • Angle (radians): ' + rawPoseRadians.angleRadians.toFixed(4));
-
-    // Show coordinate transformations
-    console.log('\n🔄 COORDINATE TRANSFORMATIONS:');
-    console.log('   • Direct mapping with global offset compensation');
-    console.log('   • Global offset applied: X=' + this.GLOBAL_OFFSET_X + ', Y=' + this.GLOBAL_OFFSET_Y);
-    
-    // Show the offset calculations
-    const rawXWithoutOffset = rawPose.x - this.GLOBAL_OFFSET_X;
-    const rawYWithoutOffset = rawPose.y - this.GLOBAL_OFFSET_Y;
-    console.log('   • Raw Leaflet X(' + rawPose.x.toFixed(2) + ') - offset(' + this.GLOBAL_OFFSET_X + ') = ' + rawXWithoutOffset.toFixed(2));
-    console.log('   • Raw Leaflet Y(' + rawPose.y.toFixed(2) + ') - offset(' + this.GLOBAL_OFFSET_Y + ') = ' + rawYWithoutOffset.toFixed(2));
-    
-    // Convert to meters
-    const metersX = this.pixelsToMetersX(rawPose.x);
-    const metersY = this.pixelsToMetersY(rawPose.y);
-    
-    console.log('   • Pixels to meters X: ' + rawPose.x.toFixed(2) + ' → ' + metersX.toFixed(3));
-    console.log('   • Pixels to meters Y: ' + rawPose.y.toFixed(2) + ' → ' + metersY.toFixed(3));
-
-    // Show final pose
-    const finalPose = this.getRobotPose();
-    const finalPoseRadians = this.getRobotPoseRadians();
-    
-    if (finalPose && finalPoseRadians) {
-      console.log('\n🎯 FINAL ROBOT POSE:');
-      console.log('   • Position (meters): (' + finalPose.x.toFixed(3) + ', ' + finalPose.y.toFixed(3) + ')');
-      console.log('   • Angle (degrees): ' + finalPose.angle.toFixed(2) + '°');
-      console.log('   • Angle (radians): ' + finalPoseRadians.angleRadians.toFixed(4) + ' rad');
-      console.log('   • Orientation: ' + this.getOrientationDescription(finalPose.angle));
-    }
-
-    // Show map context
-    console.log('\n🗺️  MAP CONTEXT:');
-    console.log('   • Map size (pixels): ' + this.mapWidthPixels + ' × ' + this.mapHeightPixels);
-    console.log('   • Map size (meters): ' + this.mapWidthMeters?.toFixed(2) + ' × ' + this.mapHeightMeters?.toFixed(2));
-    console.log('   • Resolution: ' + this.resolution + ' m/pixel');
-    console.log('   • Global coordinate offset: (' + this.GLOBAL_OFFSET_X + ', ' + this.GLOBAL_OFFSET_Y + ') pixels');
-    if (this.mapOrigin) {
-      console.log('   • Map origin: (' + this.mapOrigin.x + ', ' + this.mapOrigin.y + ') meters');
-    }
-    
-    console.log('===============================');
-  }
-
-  // Test method to be called from browser console for debugging
-  public testRobotPositions(): void {
-    console.log('🔧 TESTING ROBOT POSITIONS...');
-    this.logRobotDebugInfo();
-  }
-
-  // Debug method to log coordinate system information
-  public logCoordinateSystem(): void {
-    console.log('=== COORDINATE SYSTEM ANALYSIS ===');
-    console.log('🗺️  MAP PROPERTIES:');
-    console.log('   • Map dimensions (pixels):', [this.mapWidthPixels, this.mapHeightPixels]);
-    console.log('   • Map dimensions (meters):', [this.mapWidthMeters?.toFixed(2), this.mapHeightMeters?.toFixed(2)]);
-    console.log('   • Resolution:', this.resolution, 'm/pixel (from API)');
-    console.log('   • Map origin (from API):', this.mapOrigin);
-    
-    console.log('\n📐 COORDINATE SYSTEM EXPLANATION:');
-    console.log('   • Map pixel (0,0) represents real-world location:', [this.mapOrigin?.x, this.mapOrigin?.y], 'meters');
-    console.log('   • X axis: East (positive = rightward)');
-    console.log('   • Y axis: North (positive = downward in pixels, upward in real-world)');
-    console.log('   • Direct coordinate mapping with global offset compensation');
-    console.log('   • Global offset: X=' + this.GLOBAL_OFFSET_X + ', Y=' + this.GLOBAL_OFFSET_Y + ' (to match map coordinate system)');
-    console.log('   • Leaflet origin (0,0): Top-left corner for display');
-    
-    if (this.mapOrigin) {
-      console.log('\n🎯 COORDINATE TRANSFORMATIONS:');
-      
-      // Show the mathematical relationship with direct mapping
-      const topRightRealX = this.mapOrigin.x + this.mapWidthMeters!;
-      const topRightRealY = this.mapOrigin.y + this.mapHeightMeters!;
-      
-      console.log('   Map corners in real-world coordinates (direct mapping):');
-      console.log('   • Top-left pixel (0,0) = Real(' + this.mapOrigin.x.toFixed(1) + ', ' + this.mapOrigin.y.toFixed(1) + ')');
-      console.log('   • Bottom-right pixel (' + this.mapWidthPixels + ',' + this.mapHeightPixels + ') = Real(' + topRightRealX.toFixed(1) + ', ' + topRightRealY.toFixed(1) + ')');
-      
-      // Test coordinate conversions
-      console.log('\n🧮 CONVERSION EXAMPLES:');
-      
-      // Test our origin
-      const originXPx = this.metersToPixelsX(this.mapOrigin.x);
-      const originYPx = this.metersToPixelsY(this.mapOrigin.y);
-      console.log('   • Real-world origin (' + this.mapOrigin.x.toFixed(1) + ', ' + this.mapOrigin.y.toFixed(1) + ') -> Our pixels (' + originXPx.toFixed(1) + ', ' + originYPx.toFixed(1) + ')');
-      
-      // Test center of map
-      const centerRealX = this.mapOrigin.x + (this.mapWidthMeters! / 2);
-      const centerRealY = this.mapOrigin.y + (this.mapHeightMeters! / 2);
-      const centerXPx = this.metersToPixelsX(centerRealX);
-      const centerYPx = this.metersToPixelsY(centerRealY);
-      console.log('   • Map center (' + centerRealX.toFixed(1) + ', ' + centerRealY.toFixed(1) + ') -> Our pixels (' + centerXPx.toFixed(1) + ', ' + centerYPx.toFixed(1) + ')');
-      
-      // Test conversion back
-      const backToRealX = this.pixelsToMetersX(centerXPx);
-      const backToRealY = this.pixelsToMetersY(centerYPx);
-      console.log('   • Conversion back: (' + backToRealX.toFixed(1) + ', ' + backToRealY.toFixed(1) + ') ✓');
-      
-      console.log('\n🤖 ROBOT POSITION:');
-      const robotPose = this.getRobotPose();
-      if (robotPose && this.robotMarker) {
-        console.log('   • Current robot real-world position: (' + robotPose.x.toFixed(2) + ', ' + robotPose.y.toFixed(2) + ') meters');
-        
-        // Get raw Leaflet position for debugging
-        const rawPose = this.robotMarker.getPose();
-        console.log('   • Raw Leaflet position: (' + rawPose.x.toFixed(1) + ', ' + rawPose.y.toFixed(1) + ') pixels');
-        
-        // Convert back to our pixel coordinates for verification
-        const robotXPx = this.metersToPixelsX(robotPose.x);
-        const robotYPx = this.metersToPixelsY(robotPose.y);
-        console.log('   • Robot in pixel coordinates: (' + robotXPx.toFixed(1) + ', ' + robotYPx.toFixed(1) + ')');
-        
-        // Show direct coordinate mapping
-        console.log('   • Direct coordinate mapping: Leaflet(' + rawPose.x.toFixed(1) + ', ' + rawPose.y.toFixed(1) + ') = Pixels(' + rawPose.x.toFixed(1) + ', ' + rawPose.y.toFixed(1) + ')');
-        
-        console.log('   • Robot angle: ' + robotPose.angle.toFixed(1) + '° (' + (robotPose.angle * Math.PI / 180).toFixed(3) + ' rad)');
-        
-        // Add orientation system explanation
-        console.log('\n🧭 ROS REP-103 COMPLIANT ORIENTATION SYSTEM:');
-        console.log('   • 0° (0 rad) = East (positive X direction)');
-        console.log('   • 90° (π/2 rad) = North (positive Y direction)');
-        console.log('   • 180° (π rad) = West (negative X direction)');
-        console.log('   • 270° (3π/2 rad) = South (negative Y direction)');
-        console.log('   • Angles increase COUNTER-CLOCKWISE (right-hand rule)');
-        console.log('   • Zero yaw when pointing East (ROS REP-103 standard)');
-        console.log('   • Current robot orientation: ' + robotPose.angle.toFixed(1) + '° (' + (robotPose.angle * Math.PI / 180).toFixed(3) + ' rad) = facing ' + this.getOrientationDescription(robotPose.angle));
-      } else {
-        console.log('   • No robot position available yet');
-      }
-    }
-    
-    console.log('\n📏 SCALING VALIDATION:');
-    if (this.resolution > 0) {
-      const pixelDistance = 100; // 100 pixels
-      const realDistance = pixelDistance * this.resolution;
-      console.log('   • 100 pixels = ' + realDistance.toFixed(2) + ' meters');
-      console.log('   • 1 meter = ' + (1/this.resolution).toFixed(1) + ' pixels');
-    }
-    
-    console.log('\n📡 API VALIDATION:');
-    console.log('   • Using resolution from API:', this.resolution, 'm/pixel');
-    if (this.mapOrigin) {
-      console.log('   • Using map origin from API: (' + this.mapOrigin.x + ', ' + this.mapOrigin.y + ') meters');
-    }
-    console.log('   • Map scaling is now automatically synced with AMR system!');
-    console.log('   • All coordinates follow ROS REP-103 standard:');
-    console.log('     - X: East (positive rightward)');
-    console.log('     - Y: North (positive upward)');
-    console.log('     - Theta: Counter-clockwise positive (right-hand rule)');
-    console.log('     - Units: meters for distance, radians for angles');
-    console.log('     - Zero yaw when pointing East');
-    
-    console.log('=====================================');
-  }
-
   // Helper method to get orientation description (ROS REP-103 compliant)
   private getOrientationDescription(angleDegrees: number): string {
     // Normalize angle to 0-360 range
@@ -761,7 +586,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   public getResolutionText(): string {
     if (this.resolution) {
-      return `${(this.resolution * 1000).toFixed(1)}mm/pixel`;
+      return `${this.resolution } m/pixel`;
     }
     return 'Unknown';
   }

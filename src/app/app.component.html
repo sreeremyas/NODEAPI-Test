@@ -56,7 +56,7 @@
     font-family: 'Courier New', monospace;
     font-size: 14px;
   ">
-    <h4 style="margin: 0 0 10px 0; color: #4CAF50;">🤖 Robot Status</h4>
+    <h4 style="margin: 0 0 10px 0; color: #4CAF50;">Robot Status</h4>
     <div style="margin-bottom: 5px;">
       <strong>Position:</strong> 
       <span id="robot-position">{{ getRobotPositionText() }}</span>
@@ -110,25 +110,7 @@
         onmouseover="this.style.background='#45a049'"
         onmouseout="this.style.background='#4CAF50'"
       >
-        🎯 Initialize Localization
-      </button>
-      <button 
-        (click)="logCoordinateSystem()"
-        style="
-          margin-left: 5px;
-          padding: 8px 12px;
-          background: #2196F3;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-weight: bold;
-          font-size: 11px;
-        "
-        onmouseover="this.style.background='#1976D2'"
-        onmouseout="this.style.background='#2196F3'"
-      >
-        🔍 Debug Coords
+        Initialize Localization
       </button>
       <div style="font-size: 10px; color: #aaa; margin-top: 5px; text-align: center;">
         Send current robot position to AMR
