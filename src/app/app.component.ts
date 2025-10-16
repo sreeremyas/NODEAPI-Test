@@ -143,11 +143,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     
     // Create a custom CRS that uses meters as coordinate units
-    // This eliminates the need for coordinate conversion methods
+    // No Y-axis flip - keep coordinates intuitive
     const metersScale = 1 / this.resolution; // pixels per meter
     
     const MeterCRS = Object.assign({}, CRS.Simple, {
-      transformation: new Transformation(metersScale, 0, -metersScale, 0)
+      transformation: new Transformation(metersScale, 0, metersScale, 0)
     });
     
     // Initialize the map with meter-based coordinate system
@@ -266,7 +266,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         iconAnchor: [crosshairSize / 2, crosshairSize / 2] // Center the crosshair
       });
 
-      // Create the origin marker using meter coordinates directly
+      // Create the origin marker accounting for the flipped Y bounds
+      // Since we flipped Y in bounds, we need to map real-world Y to Leaflet Y
+      // Real-world origin Y should map to the bottom of the image
+      const leafletY = (originYMeters + this.mapHeightMeters) - originYMeters; // This equals mapHeightMeters
+      const leafletYPosition = originYMeters + this.mapHeightMeters - originYMeters; // Bottom of image in Leaflet coords
+      
       this.originMarker = marker([originYMeters, originXMeters], {
         icon: crosshairIcon,
         interactive: false, // Make it non-interactive so it doesn't interfere with map interactions
@@ -306,14 +311,16 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       });
       
       // Define the bounds for the image overlay based on real-world coordinate system in meters
-      // Note: In CRS.Simple, coordinates are [y, x] not [lat, lng]
-      // Map origin from API represents bottom-left corner in real-world coordinates
+      // To make Y increase upward (mathematical coordinates), we need to flip the Y bounds
       const originXMeters = this.mapOrigin?.x || 0;
       const originYMeters = this.mapOrigin?.y || 0;
       
+      // Flip Y coordinates so that Y increases upward instead of downward
+      // Top edge in real world (higher Y) maps to bottom edge in Leaflet (lower lat)
+      // Bottom edge in real world (lower Y) maps to top edge in Leaflet (higher lat)
       const bounds = new LatLngBounds(
-        [originYMeters, originXMeters], // Southwest corner (bottom-left) - map origin in meters
-        [originYMeters + this.mapHeightMeters, originXMeters + this.mapWidthMeters] // Northeast corner (top-right) in meters
+        [originYMeters + this.mapHeightMeters, originXMeters], // Northwest corner (top-left in real world, top in Leaflet)
+        [originYMeters, originXMeters + this.mapWidthMeters] // Southeast corner (bottom-right in real world, bottom in Leaflet)
       );
 
       // Remove existing image layer if it exists
@@ -345,6 +352,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       // Set the map view to center with calculated zoom based on real coordinate system in meters
       const centerX = originXMeters + (this.mapWidthMeters / 2);
       const centerY = originYMeters + (this.mapHeightMeters / 2);
+      // Direct coordinate mapping - no Y-axis flip needed
       const center: [number, number] = [centerY, centerX];
       this.map.setView(center, initialZoom);
 
@@ -428,8 +436,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       // Calculate robot scale based on its physical size
       const robotScale = this.calculateRobotScale();
       
-      // Create robot marker using meter coordinates directly (note: Leaflet uses [lat, lng] which maps to [y, x])
-      this.robotMarker = new RotatableMarker([centerYMeters, centerXMeters], { scale: robotScale });
+      // Create robot marker using converted coordinates to account for flipped Y bounds
+      // Convert real-world Y to Leaflet Y coordinate
+      const originYMeters = this.mapOrigin?.y || 0;
+      const leafletY = (originYMeters + this.mapHeightMeters) - centerYMeters;
+      this.robotMarker = new RotatableMarker([leafletY, centerXMeters], { scale: robotScale });
       
       // Set initial tracking values
       this.previousRobotX = centerXMeters;
@@ -510,7 +521,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Update position if changed
     if (positionChanged) {
-      this.robotMarker.setLatLng([yMeters, xMeters]);
+      // Convert real-world coordinates to Leaflet coordinates
+      // Since we flipped Y in bounds: leaflet Y = (originY + mapHeight) - real Y
+      const originYMeters = this.mapOrigin?.y || 0;
+      const leafletY = (originYMeters + this.mapHeightMeters) - yMeters;
+      this.robotMarker.setLatLng([leafletY, xMeters]);
       this.previousRobotX = xMeters;
       this.previousRobotY = yMeters;
     }
@@ -544,20 +559,20 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   public getRobotPose(): { x: number, y: number, angle: number } | null {
     if (this.robotMarker) {
       const pose = this.robotMarker.getPose();
-      console.log("Raw pose from marker (Leaflet coordinates [y,x]):", pose);
+      console.log("Raw pose from marker (Leaflet coordinates [lat,lng]):", pose);
       
-      // In Leaflet CRS.Simple with meter-based bounds:
-      // The marker's pose.x corresponds to the X coordinate in our bound system
-      // The marker's pose.y corresponds to the Y coordinate in our bound system
-      // Since our bounds are [originYMeters, originXMeters] to [originYMeters + height, originXMeters + width]
-      // The coordinates should already be in the correct meter space
+      // Convert from Leaflet coordinates back to real-world coordinates
+      // Since we flipped Y in bounds: real Y = (originY + mapHeight) - leaflet Y
+      const originYMeters = this.mapOrigin?.y || 0;
+      const realWorldX = pose.x; // X coordinate (unchanged)
+      const realWorldY =  -(pose.y - (2*originYMeters )); // Convert flipped Y back
       
-      console.log("Robot pose in real-world coordinates:", { x: pose.x, y: pose.y });
+      console.log("Robot pose in real-world coordinates:", { x: realWorldX, y: realWorldY });
       
       // Reverse the direction of the angle (make clockwise positive)
       return {
-        x: pose.x, // Should already be in real-world meters
-        y: pose.y, // Should already be in real-world meters  
+        x: realWorldX, // Real-world X coordinate
+        y: realWorldY, // Real-world Y coordinate
         angle: (360 - pose.angle) % 360 // Clockwise positive, 0°=East, 90°=South, 180°=West, 270°=North
       };
     }
