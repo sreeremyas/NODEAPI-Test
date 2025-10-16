@@ -1,5 +1,5 @@
 import { Component, OnInit, AfterViewInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { Map, map, tileLayer, LayerGroup, marker, Icon, latLng, imageOverlay, LatLngBounds, CRS, Point } from 'leaflet';
+import { Map, map, LayerGroup, marker, Icon, imageOverlay, LatLngBounds, CRS } from 'leaflet';
 import 'leaflet-rotatedmarker';
 import { MapService } from './services/map.service';
 import { RotatableMarker } from './rotatable-marker';
@@ -12,7 +12,6 @@ import { RotatableMarker } from './rotatable-marker';
 })
 export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private map!: Map;
-  private mapData: any;
   private mapId: string = '';
   private markersLayer: LayerGroup = new LayerGroup();
   private mapImageUrl: string | null = null;
@@ -219,9 +218,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         this.originMarker.remove();
       }
 
-      // Convert origin coordinates from meters to pixels - direct mapping
-      const originXPixels = this.metersToPixelsX(this.mapOrigin.x);
-      const originYPixels = this.metersToPixelsY(this.mapOrigin.y);
+      // Convert origin coordinates from meters to pixels
+      // mapOrigin represents the bottom-left corner of the image in real-world coordinates
+      // This should map to pixel coordinates (0, mapHeightPixels) for bottom-left corner
+      const originXPixels = this.metersToPixelsX(this.mapOrigin.x); // Should be 0 for left edge
+      const originYPixels = this.mapHeightPixels - this.metersToPixelsY(this.mapOrigin.y); // Bottom edge in Leaflet coords
 
       // Create crosshair SVG icon that scales better with zoom
       const crosshairSize = 40;
@@ -505,42 +506,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     return null;
   }
 
-  // Method to log current robot state (for testing)
-  public logRobotState(): void {
-    const pose = this.getRobotPose();
-    if (pose) {
-      console.log('Current robot pose:', pose);
-    }
-    
-    // Also log raw Leaflet positions for debugging
-    if (this.robotMarker) {
-      const rawPose = this.robotMarker.getPose();
-      console.log('Raw Leaflet position:', {
-        leafletX: rawPose.x,
-        leafletY: rawPose.y,
-        angleDegrees: rawPose.angle
-      });
-    }
-  }
-
-  // Method to log current robot state in radians (ROS REP-103 preferred)
-  public logRobotStateRadians(): void {
-    const poseRadians = this.getRobotPoseRadians();
-    if (poseRadians) {
-      console.log('Current robot pose (radians):', poseRadians);
-    }
-    
-    // Also log raw Leaflet positions for debugging
-    if (this.robotMarker) {
-      const rawPose = this.robotMarker.getPoseRadians();
-      console.log('Raw Leaflet position (radians):', {
-        leafletX: rawPose.x,
-        leafletY: rawPose.y,
-        angleRadians: rawPose.angleRadians
-      });
-    }
-  }
-
   // Helper method to get orientation description (ROS REP-103 compliant)
   private getOrientationDescription(angleDegrees: number): string {
     // Normalize angle to 0-360 range
@@ -586,7 +551,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   public getResolutionText(): string {
     if (this.resolution) {
-      return `${this.resolution } m/pixel`;
+      return `${this.resolution} m/pixel`;
     }
     return 'Unknown';
   }
