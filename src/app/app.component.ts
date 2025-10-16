@@ -544,12 +544,20 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   public getRobotPose(): { x: number, y: number, angle: number } | null {
     if (this.robotMarker) {
       const pose = this.robotMarker.getPose();
-      console.log("Pose ------!!!", pose)
-      // With meter-based CRS, pose coordinates are already in meters
+      console.log("Raw pose from marker (Leaflet coordinates [y,x]):", pose);
+      
+      // In Leaflet CRS.Simple with meter-based bounds:
+      // The marker's pose.x corresponds to the X coordinate in our bound system
+      // The marker's pose.y corresponds to the Y coordinate in our bound system
+      // Since our bounds are [originYMeters, originXMeters] to [originYMeters + height, originXMeters + width]
+      // The coordinates should already be in the correct meter space
+      
+      console.log("Robot pose in real-world coordinates:", { x: pose.x, y: pose.y });
+      
       // Reverse the direction of the angle (make clockwise positive)
       return {
-        x: pose.x, // Already in meters
-        y: pose.y, // Already in meters
+        x: pose.x, // Should already be in real-world meters
+        y: pose.y, // Should already be in real-world meters  
         angle: (360 - pose.angle) % 360 // Clockwise positive, 0°=East, 90°=South, 180°=West, 270°=North
       };
     }
