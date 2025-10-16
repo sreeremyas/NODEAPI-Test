@@ -431,7 +431,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       // Place robot at center of map in real-world coordinates
       // Center is origin + half the map dimensions
       const centerXMeters = (this.mapOrigin?.x || 0) + (this.mapWidthMeters / 2);
-      const centerYMeters = (this.mapOrigin?.y || 0) + (this.mapHeightMeters / 2);
+      const centerYMeters = (this.mapOrigin?.y || 0) - (this.mapHeightMeters / 2);
 
       // Calculate robot scale based on its physical size
       const robotScale = this.calculateRobotScale();
@@ -440,7 +440,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       // Convert real-world Y to Leaflet Y coordinate
       const originYMeters = this.mapOrigin?.y || 0;
       const leafletY = (originYMeters + this.mapHeightMeters) - centerYMeters;
-      this.robotMarker = new RotatableMarker([leafletY, centerXMeters], { scale: robotScale });
+      this.robotMarker = new RotatableMarker([centerYMeters, centerXMeters], { scale: robotScale });
       
       // Set initial tracking values
       this.previousRobotX = centerXMeters;
