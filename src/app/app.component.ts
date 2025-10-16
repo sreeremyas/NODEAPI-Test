@@ -1,5 +1,5 @@
 import { Component, OnInit, AfterViewInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { Map, map, LayerGroup, marker, Icon, imageOverlay, LatLngBounds, CRS } from 'leaflet';
+import { Map, map, LayerGroup, marker, Icon, imageOverlay, LatLngBounds, CRS, Transformation } from 'leaflet';
 import 'leaflet-rotatedmarker';
 import { MapService } from './services/map.service';
 import { RotatableMarker } from './rotatable-marker';
@@ -25,6 +25,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private mapHeightMeters: number = 0;
   private mapOrigin: { x: number, y: number, theta: number, z: number } | null = null;
   private originMarker: any = null;
+  private mapImageLayer: any = null; // Track the image overlay layer
+  private previousRobotX: number | null = null; // Track previous robot X position
+  private previousRobotY: number | null = null; // Track previous robot Y position
+  private previousRobotAngle: number | null = null; // Track previous robot angle
   private isLocalized: boolean = false;
   private localizationConfidence: number = 0;
   private mapName: string = '';
@@ -110,6 +114,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
           return;
         }
         this.mapImageUrl = imageUrl;
+        // Initialize map now that we have resolution and image URL
+        if (!this.map) {
+          this.initMap();
+        }
         if (this.map) {
           this.displayMapImage();
         }
@@ -123,13 +131,28 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit() {
-    this.initMap();
+    // Map initialization will happen after getMapData completes in ngOnInit
+    // and resolution is available
   }
 
   private initMap(): void {
-    // Initialize the map with a CRS.Simple coordinate system for image overlay
+    // Wait for resolution to be available before creating the map
+    if (!this.resolution) {
+      console.warn('Resolution not available yet, deferring map initialization');
+      return;
+    }
+    
+    // Create a custom CRS that uses meters as coordinate units
+    // This eliminates the need for coordinate conversion methods
+    const metersScale = 1 / this.resolution; // pixels per meter
+    
+    const MeterCRS = Object.assign({}, CRS.Simple, {
+      transformation: new Transformation(metersScale, 0, -metersScale, 0)
+    });
+    
+    // Initialize the map with meter-based coordinate system
     this.map = map('map', {
-      crs: CRS.Simple,
+      crs: MeterCRS,
       minZoom: -5,
       maxZoom: 5,
       zoomControl: true,
@@ -160,11 +183,9 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private metersToPixelsY(meters: number): number {
-    // Y: Convert real-world meters to pixels, with Y decreasing when going up
-    // No Y-axis flip - direct mapping where higher Y meters = higher Y pixels (down on screen)
-    const metersFromOrigin = meters - (this.mapOrigin?.y || 0);
-    const pixelsFromOrigin = metersFromOrigin / this.resolution;
-    return pixelsFromOrigin;
+    // Y: Convert real-world meters to pixels , Y increasing when going up 
+    const pixels = (meters - (this.mapOrigin?.y || 0)) / this.resolution;
+    return pixels;
   }
 
   private pixelsToMetersX(pixels: number): number {
@@ -218,11 +239,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         this.originMarker.remove();
       }
 
-      // Convert origin coordinates from meters to pixels
-      // mapOrigin represents the bottom-left corner of the image in real-world coordinates
-      // This should map to pixel coordinates (0, mapHeightPixels) for bottom-left corner
-      const originXPixels = this.metersToPixelsX(this.mapOrigin.x); // Should be 0 for left edge
-      const originYPixels = this.mapHeightPixels - this.metersToPixelsY(this.mapOrigin.y); // Bottom edge in Leaflet coords
+      // Convert origin coordinates from meters to display coordinates
+      // With meter-based CRS, we can use meter coordinates directly
+      const originXMeters = this.mapOrigin.x;
+      const originYMeters = this.mapOrigin.y;
 
       // Create crosshair SVG icon that scales better with zoom
       const crosshairSize = 40;
@@ -246,8 +266,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         iconAnchor: [crosshairSize / 2, crosshairSize / 2] // Center the crosshair
       });
 
-      // Create the origin marker
-      this.originMarker = marker([originYPixels, originXPixels], {
+      // Create the origin marker using meter coordinates directly
+      this.originMarker = marker([originYMeters, originXMeters], {
         icon: crosshairIcon,
         interactive: false, // Make it non-interactive so it doesn't interfere with map interactions
         zIndexOffset: -1000 // Put it behind other markers
@@ -257,7 +277,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
       console.log('Origin crosshair added (ROS REP-103):', {
         originMeters: [this.mapOrigin.x, this.mapOrigin.y, this.mapOrigin.z],
-        originPixels: [originXPixels.toFixed(1), originYPixels.toFixed(1)],
+        originCoords: [originXMeters.toFixed(1), originYMeters.toFixed(1)],
         theta: this.mapOrigin.theta,
         thetaDegrees: (this.mapOrigin.theta * 180 / Math.PI).toFixed(1)
       });
@@ -285,20 +305,28 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         resolution: this.resolution
       });
       
-      // Define the bounds for the image overlay in pixels (CRS.Simple coordinate system)
+      // Define the bounds for the image overlay based on real-world coordinate system in meters
       // Note: In CRS.Simple, coordinates are [y, x] not [lat, lng]
-      // Use exact pixel boundaries to maintain aspect ratio
+      // Map origin from API represents bottom-left corner in real-world coordinates
+      const originXMeters = this.mapOrigin?.x || 0;
+      const originYMeters = this.mapOrigin?.y || 0;
+      
       const bounds = new LatLngBounds(
-        [0, 0], // Southwest corner (bottom-left)
-        [this.mapHeightPixels, this.mapWidthPixels] // Northeast corner (top-right)
+        [originYMeters, originXMeters], // Southwest corner (bottom-left) - map origin in meters
+        [originYMeters + this.mapHeightMeters, originXMeters + this.mapWidthMeters] // Northeast corner (top-right) in meters
       );
 
+      // Remove existing image layer if it exists
+      if (this.mapImageLayer) {
+        this.mapImageLayer.remove();
+      }
+
       // Add the image overlay to the map with proper options
-      const imageLayer = imageOverlay(this.mapImageUrl!, bounds, {
+      this.mapImageLayer = imageOverlay(this.mapImageUrl!, bounds, {
         interactive: false, // Prevent interaction issues
         crossOrigin: 'anonymous' // Prevent CORS issues
       });
-      imageLayer.addTo(this.map);
+      this.mapImageLayer.addTo(this.map);
 
       // Calculate proper initial zoom to maintain aspect ratio
       const mapContainer = this.map.getContainer();
@@ -314,8 +342,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       const baseZoom = Math.log2(optimalRatio);
       const initialZoom = Math.max(-3, Math.min(1, baseZoom)); // Clamp between -3 and 1
 
-      // Set the map view to center with calculated zoom
-      const center: [number, number] = [this.mapHeightPixels / 2, this.mapWidthPixels / 2];
+      // Set the map view to center with calculated zoom based on real coordinate system in meters
+      const centerX = originXMeters + (this.mapWidthMeters / 2);
+      const centerY = originYMeters + (this.mapHeightMeters / 2);
+      const center: [number, number] = [centerY, centerX];
       this.map.setView(center, initialZoom);
 
       // Set maximum bounds with minimal padding to prevent coordinate drift
@@ -387,22 +417,24 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       // Remove existing robot marker
       if (this.robotMarker) {
         this.robotMarker.remove();
+        this.resetRobotTracking(); // Reset tracking values when removing marker
       }
 
       // Place robot at center of map in real-world coordinates
       // Center is origin + half the map dimensions
       const centerXMeters = (this.mapOrigin?.x || 0) + (this.mapWidthMeters / 2);
       const centerYMeters = (this.mapOrigin?.y || 0) + (this.mapHeightMeters / 2);
-      
-      const centerXPixels = this.metersToPixelsX(centerXMeters);
-      const centerYPixels = this.metersToPixelsY(centerYMeters);
 
       // Calculate robot scale based on its physical size
       const robotScale = this.calculateRobotScale();
       
-      // Create robot marker (note: Leaflet uses [lat, lng] which maps to [y, x] in pixels)
-      // Direct coordinate mapping without Y-axis flipping
-      this.robotMarker = new RotatableMarker([centerYPixels, centerXPixels], { scale: robotScale });
+      // Create robot marker using meter coordinates directly (note: Leaflet uses [lat, lng] which maps to [y, x])
+      this.robotMarker = new RotatableMarker([centerYMeters, centerXMeters], { scale: robotScale });
+      
+      // Set initial tracking values
+      this.previousRobotX = centerXMeters;
+      this.previousRobotY = centerYMeters;
+      this.previousRobotAngle = 0; // Default angle
       
       // Add event listeners for real-time position updates
       this.robotMarker.on('drag', () => {
@@ -412,6 +444,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       this.robotMarker.on('dragend', () => {
         const pose = this.getRobotPose();
         if (pose && this.robotMarker) {
+          // Update tracking values when robot is manually moved
+          this.previousRobotX = pose.x;
+          this.previousRobotY = pose.y;
+          this.previousRobotAngle = pose.angle;
+          
           const rawPose = this.robotMarker.getPose();
           console.log('Robot moved to (meters):', pose);
           console.log('Raw Leaflet position:', {
@@ -432,8 +469,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       
       console.log('Robot marker added:', {
         positionMeters: [centerXMeters.toFixed(2), centerYMeters.toFixed(2)],
-        positionPixels: [centerXPixels.toFixed(1), centerYPixels.toFixed(1)],
-        leafletCoords: [centerYPixels.toFixed(1), centerXPixels.toFixed(1)],
+        leafletCoords: [centerYMeters.toFixed(1), centerXMeters.toFixed(1)],
         scale: robotScale.toFixed(2)
       });
     } catch (error) {
@@ -441,27 +477,58 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  // Helper method to reset robot tracking values
+  private resetRobotTracking(): void {
+    this.previousRobotX = null;
+    this.previousRobotY = null;
+    this.previousRobotAngle = null;
+  }
+
+  // Helper method to check if values have changed within tolerance
+  private hasSignificantChange(oldValue: number | null, newValue: number, tolerance: number = 0.001): boolean {
+    if (oldValue === null) return true; // First time setting value
+    return Math.abs(oldValue - newValue) > tolerance;
+  }
+
   // Method to update robot position and rotation (input: meters for position, degrees for angle)
   // ROS REP-103 COMPLIANT: 0° = East, 90° = North, 180° = West, 270° = South
   // Counter-clockwise positive rotation (yaw increases counter-clockwise)
   public updateRobotPosition(xMeters: number, yMeters: number, angleDegrees: number): void {
-    if (this.robotMarker) {
-      // Convert meters to pixels using direct coordinate mapping
-      const xPixels = this.metersToPixelsX(xMeters);
-      const yPixels = this.metersToPixelsY(yMeters);
-      
-      // Direct coordinate mapping without Y-axis flipping
-      this.robotMarker.setLatLng([yPixels, xPixels]);
-      this.robotMarker.rotate(angleDegrees); // RotatableMarker expects degrees (0°=East, 90°=North, 180°=West, 270°=South)
-      
-      console.log('Robot position updated:', {
-        metersInput: [xMeters, yMeters],
-        pixelsConverted: [xPixels.toFixed(1), yPixels.toFixed(1)],
-        leafletCoords: [yPixels.toFixed(1), xPixels.toFixed(1)],
-        angleDegrees: angleDegrees,
-        angleRadians: (angleDegrees * Math.PI / 180).toFixed(3)
-      });
+    if (!this.robotMarker) {
+      return;
     }
+
+    // Check if there are actual changes in position or rotation (with tolerance for floating-point precision)
+    const positionChanged = this.hasSignificantChange(this.previousRobotX, xMeters, 0.001) || 
+                           this.hasSignificantChange(this.previousRobotY, yMeters, 0.001);
+    const rotationChanged = this.hasSignificantChange(this.previousRobotAngle, angleDegrees, 0.1); // 0.1 degree tolerance
+    
+    // Only update if there are changes
+    if (!positionChanged && !rotationChanged) {
+      return; // No changes, skip update
+    }
+
+    // Update position if changed
+    if (positionChanged) {
+      this.robotMarker.setLatLng([yMeters, xMeters]);
+      this.previousRobotX = xMeters;
+      this.previousRobotY = yMeters;
+    }
+
+    // Update rotation if changed
+    if (rotationChanged) {
+      this.robotMarker.rotate(angleDegrees); // RotatableMarker expects degrees (0°=East, 90°=North, 180°=West, 270°=South)
+      this.previousRobotAngle = angleDegrees;
+    }
+    
+    console.log('Robot position updated:', {
+      metersInput: [xMeters, yMeters],
+      leafletCoords: [yMeters.toFixed(1), xMeters.toFixed(1)],
+      angleDegrees: angleDegrees,
+      angleRadians: (angleDegrees * Math.PI / 180).toFixed(3),
+      positionChanged: positionChanged,
+      rotationChanged: rotationChanged
+    });
   }
 
   // Method to update robot position and rotation using radians (ROS REP-103 preferred)
@@ -477,30 +544,13 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   public getRobotPose(): { x: number, y: number, angle: number } | null {
     if (this.robotMarker) {
       const pose = this.robotMarker.getPose();
-
-      // Direct coordinate mapping without Y-axis flipping
+      console.log("Pose ------!!!", pose)
+      // With meter-based CRS, pose coordinates are already in meters
       // Reverse the direction of the angle (make clockwise positive)
       return {
-        x: this.pixelsToMetersX(pose.x),
-        y: this.pixelsToMetersY(pose.y),
+        x: pose.x, // Already in meters
+        y: pose.y, // Already in meters
         angle: (360 - pose.angle) % 360 // Clockwise positive, 0°=East, 90°=South, 180°=West, 270°=North
-      };
-    }
-    return null;
-  }
-
-  // Method to get current robot pose with radians (ROS REP-103 preferred)
-  // ROS REP-103 COMPLIANT: 0 rad = East, π/2 rad = North, π rad = West, 3π/2 rad = South
-  public getRobotPoseRadians(): { x: number, y: number, angleRadians: number } | null {
-    if (this.robotMarker) {
-      const pose = this.robotMarker.getPoseRadians();
-      
-      // Direct coordinate mapping without Y-axis flipping
-      // Convert from pixels back to meters using direct coordinate system
-      return {
-        x: this.pixelsToMetersX(pose.x),
-        y: this.pixelsToMetersY(pose.y),
-        angleRadians: pose.angleRadians // This is in radians from RotatableMarker (ROS REP-103 compliant)
       };
     }
     return null;
@@ -646,6 +696,9 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     // Clean up resources
     if (this.mapImageUrl) {
       this.mapService.releaseMapImage(this.mapImageUrl);
+    }
+    if (this.mapImageLayer) {
+      this.mapImageLayer.remove();
     }
     if (this.map) {
       this.map.remove();
